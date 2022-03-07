@@ -1,0 +1,309 @@
+---
+title: "Lab 07 Student Problems"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+```
+
+## Student Problem 01
+
+(1) Load the `gad7_data.csv` dataset, which shows repeated observations of the GAD-7 scale in 50 patients, which measures generalized anxiety symptoms.
+
+```{r}
+
+gad_7_data <- read_csv("data/gad7_data.csv")
+
+```
+
+(2) Pivot this data longer so that you can create a spaghetti plot of GAD-7 scores over four weeks. Try to make your spaghetti plot as clear as possible.
+
+```{r}
+
+gad_longer <- gad_7_data %>%
+  pivot_longer(cols = starts_with("week"),
+               names_to = "week",
+               values_to = "gad_score")
+
+ggplot(data = gad_longer) +
+  geom_line(aes(x = week, y = gad_score, group = id), alpha = 0.4) +
+  theme_bw()
+
+# You can manually fix the week variable names, but this wouldn't scale
+# well if you had a lot of weeks
+gad_longer_f <- gad_longer %>%
+  mutate(week = case_when(week == "week1_gad" ~ 1,
+                          week == "week2_gad" ~ 2,
+                          week == "week3_gad" ~ 3,
+                          week == "week4_gad" ~ 4))
+
+ggplot(data = gad_longer_f) +
+  geom_line(aes(x = week, y = gad_score, group = id), alpha = 0.4) +
+  theme_bw()
+
+# Within pivot use the argument names_transform to change names
+gad_longer_nt <- gad_7_data %>%
+  pivot_longer(cols = starts_with("week"),
+               names_to = "week",
+               values_to = "gad_score",
+               names_transform = list("week" = function(x) str_remove(x, "week")))
+
+# Write a quick cleaning function that alters the names and turns them into 
+# numerics
+cleaning_function <- function(s){
+  step1 <- str_remove(s, "week") 
+  step2 <- str_remove(step1, "_gad")
+  step3 <- as.numeric(step2)
+  return(step3)
+}
+
+# Call your cleaning function inside of the names_transform argument
+gad_longer_nt <- gad_7_data %>%
+  pivot_longer(cols = starts_with("week"),
+               names_to = "week",
+               values_to = "gad_score",
+               names_transform = list("week" = function(x) cleaning_function(x)))
+
+# Able to write your function directly into names_transform argument:
+gad_longer_nt_alt <- gad_7_data %>%
+  pivot_longer(cols = starts_with("week"),
+               names_to = "week",
+               values_to = "gad_score",
+               names_transform = list("week" = function(x){
+                  step1 <- str_remove(x, "week") 
+                  step2 <- str_remove(step1, "_gad")
+                  step3 <- as.numeric(step2)
+                  return(step3)
+                }))
+
+```
+
+(3) Create an indicator variable to identify individuals whose GAD score increases from Week 3 to Week 4. As a first step, pivot_wider() from the long dataset to reproduce the original dataset.
+
+```{r}
+
+# Pivoting wide makes it much easier to do this:
+gad_wider <- gad_longer_nt_alt %>%
+  pivot_wider(names_from = week,
+              values_from = gad_score,
+              names_prefix = "gad_week_")
+
+# Just compare week 4 and week 3 variables -- easy!
+gad_mutated <- gad_wider %>%
+  mutate(late_increasers = if_else(gad_week_4 > gad_week_3, 1, 0))
+
+```
+
+(4) Now create an indicator variable to identify individuals whose GAD score decreases every week throughout the study.
+
+```{r}
+
+gad_mutated_more <- gad_mutated %>%
+  mutate(decreasers = if_else(gad_week_4 < gad_week_3 &
+           gad_week_3 < gad_week_2 &
+           gad_week_2 < gad_week_1, 1, 0))
+
+
+```
+
+(5) Create a variable for those who don't fall into the two above categories -- call this variable "others".
+
+```{r}
+
+gad_mutated_final <- gad_mutated_more %>%
+  mutate(others = if_else(late_increasers == 0 & decreasers == 0, 1, 0))
+
+```
+
+(6) Create a faceted spaghetti plot by these three new categories that you just created.
+
+```{r}
+
+# Strategy 1: pivot longer twice
+
+gad_mutated_longer1 <- gad_mutated_final %>%
+  pivot_longer(cols = starts_with("gad_week"),
+               names_to = "week",
+               values_to = "gad_score",
+               names_transform = list("week" = function(x){
+                 s1 <- str_remove(x, "gad_week_")
+                 out <- as.numeric(s1)
+                 return(out)
+               }))
+
+gad_mutated_longer2 <- gad_mutated_longer1 %>%
+  pivot_longer(cols = late_increasers:others,
+               names_to = "class",
+               values_to = "presence") %>%
+  filter(presence == 1)
+
+# Strategy 2 pivot longer and then create a new variable:
+
+gad_mutated_longer1 <- gad_mutated_final %>%
+  pivot_longer(cols = starts_with("gad_week"),
+               names_to = "week",
+               values_to = "gad_score",
+               names_transform = list("week" = function(x){
+                 s1 <- str_remove(x, "gad_week_")
+                 out <- as.numeric(s1)
+                 return(out)
+               }))
+
+gad_mutated_longer_alt <- gad_mutated_longer1 %>%
+  mutate(class = case_when(late_increasers == 1 ~ "Late Increaser",
+                           decreasers == 1 ~ "Decreaser",
+                           others == 1 ~ "Other"))
+
+ggplot(data = gad_mutated_longer_alt) +
+  geom_line(aes(x = week, y = gad_score, group = id), alpha = 0.4) +
+  theme_bw() +
+  facet_wrap(~class)
+
+
+
+```
+
+## Student Problem 02
+
+(1) Load the latest NYC COVID-19 data from https://raw.githubusercontent.com/nychealth/coronavirus-data/master/latest/now-cases-by-day.csv and clean the dates using lubridate::mdy
+
+```{r}
+
+covid_data <- read_csv("https://raw.githubusercontent.com/nychealth/coronavirus-data/master/latest/now-cases-by-day.csv")
+
+clean_covid <- covid_data %>%
+  mutate(clean_date = lubridate::mdy(date_of_interest)) # this is a way to call a function from a package you have installed without loading the whole library
+
+```
+
+(2) Plot the total case count (`CASE_COUNT`) over time.
+
+```{r}
+
+ggplot(data = clean_covid) +
+  geom_line(aes(x = clean_date, y = CASE_COUNT)) +
+  theme_bw()
+
+
+```
+
+(3) Use `pivot_longer()` to create a dataset that will allow you to map different borough case counts to the color aesthetic `BX_CASE_COUNT`, `BK_CASE_COUNT`, `MN_CASE_COUNT`, `SI_CASE_COUNT`, `QN_CASE_COUNT`.
+
+```{r}
+
+# Pivot these multiple columns into a variable that represents borough and a variable
+# that represents cases
+borough_long <- clean_covid %>%
+  pivot_longer(cols = c("BX_CASE_COUNT",
+                        "BK_CASE_COUNT",
+                        "MN_CASE_COUNT",
+                        "QN_CASE_COUNT",
+                        "SI_CASE_COUNT"),
+               names_to = "borough",
+               values_to = "cases")
+
+# Now it is very easy to create graph with different boroughs mapped onto
+# the color aesthetic
+ggplot(data = borough_long) +
+  geom_line(aes(x = clean_date, y = cases, color = borough)) +
+  theme_minimal()
+
+# geom_ribbon creates a better visualization of these multiple lines
+ggplot(data = borough_long) +
+  geom_ribbon(aes(x = clean_date, ymin = 0, ymax = cases, fill = borough), alpha = 0.4) +
+  theme_minimal()
+
+```
+
+(4) Create a similar plot of COVID-19 probable case counts and then place these two plots in a vertical column using the **patchwork** package.
+
+```{r}
+
+
+# Reproducing the borough case count long dataset from above
+borough_long_case <- clean_covid %>%
+  pivot_longer(cols = c("BX_CASE_COUNT",
+                        "BK_CASE_COUNT",
+                        "MN_CASE_COUNT",
+                        "QN_CASE_COUNT",
+                        "SI_CASE_COUNT"),
+               names_to = "borough",
+               values_to = "cases")
+
+# Creating the plot from above, but saving it as an object in our environment so
+# we can manipulate it
+case_plot <- ggplot(data = borough_long_case) +
+  geom_line(aes(x = clean_date, y = cases, color = borough)) +
+  theme_minimal()
+
+# Now go through the same process for the probable case counts
+borough_long_prob <- clean_covid %>%
+  pivot_longer(cols = c("BX_PROBABLE_CASE_COUNT",
+                        "BK_PROBABLE_CASE_COUNT",
+                        "MN_PROBABLE_CASE_COUNT",
+                        "QN_PROBABLE_CASE_COUNT",
+                        "SI_PROBABLE_CASE_COUNT"),
+               names_to = "borough",
+               values_to = "prob_cases")
+
+prob_plot <- ggplot(data = borough_long_prob) +
+  geom_line(aes(x = clean_date, y = prob_cases, color = borough)) +
+  theme_minimal()
+
+# Using the patchwork package you can combine plots that are saved in your environment
+library(patchwork)
+# Install if necessary:
+#install.packages("patchwork") 
+
+# Plots side by side using | operator
+case_plot | prob_plot
+
+# Plots on top vertically using / operator
+case_plot / prob_plot
+
+# You can combine in multiple ways:
+(case_plot / prob_plot) | prob_plot
+
+
+```
+
+Check out more details in the patchwork documentation:
+
+(https://patchwork.data-imaginist.com/articles/patchwork.html)
+
+
+(5) Create a faceted plot (case/probable case) instead of the two separate plots in (4).
+
+```{r}
+
+# Select down to make these manageable, recode the boroughs so they are the same for joining
+borough_cases <- borough_long %>%
+  select(clean_date, borough, cases) %>%
+  mutate(borough = str_remove(borough, "_CASE_COUNT"))
+
+borough_probable <- borough_long_prob %>%
+  select(clean_date, borough, prob_cases) %>%
+  mutate(borough = str_remove(borough, "_PROBABLE_CASE_COUNT"))
+
+# Join together
+
+borough_all <- borough_cases %>%
+  full_join(borough_probable, by = c("clean_date", "borough"))
+
+all_long <- borough_all %>%
+  pivot_longer(cols = cases:prob_cases,
+               names_to = "case_type",
+               values_to = "count")
+
+# Now we have a dataset where you can facet by type of plot:
+ggplot(data = all_long) +
+  geom_line(aes(x = clean_date, y = count, color = borough)) +
+  geom_ribbon(aes(x = clean_date, ymin = 0, ymax = count, fill = borough), alpha = 0.4) +
+  facet_wrap(~case_type, ncol = 1) +
+  theme_bw()
+
+
+
+```

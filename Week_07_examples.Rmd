@@ -1,0 +1,74 @@
+---
+title: "Week 07 Examples"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(readxl)
+library(knitr)
+```
+
+## Wide and Long Data
+
+```{r}
+
+## Example of a wide data set
+
+blood_pressure_data <- read_csv("data/bp_data.csv")
+
+
+## Transforming wide data to long data:
+
+# Move from wide to long data:
+blood_pressure_long1 <- blood_pressure_data %>%
+  pivot_longer(cols = starts_with("bp_week"),
+               names_to = "week")
+
+# You can add the values_to argument to name the new column:
+blood_pressure_long2 <- blood_pressure_data %>%
+  pivot_longer(cols = starts_with("bp_week"), #identifying what we want to transform
+               names_to = "week", #new variable
+               values_to = "blood_pressure") #new variable
+#some values duplicated for those with same id
+
+# If you want to get fancy you can specify a custom function to transform the names cleanly:
+blood_pressure_long3 <- blood_pressure_data %>%
+  pivot_longer(cols = starts_with("bp_week"),
+               names_to = "week",
+               values_to = "blood_pressure",
+               names_transform = list(week = function(x) str_remove(x, "bp_week")))
+#removed the prefix from the values
+
+# Example of long data:
+
+gapminder_data <- read_csv("data/reduced_gapminder.csv")
+#3 primary keys (country continent year), we care about life expectancy variable
+
+## Transforming long data to wide data:
+
+# Moving from long to wide
+
+gapminder_wide1 <- gapminder_data %>%
+  pivot_wider(names_from = year, #inverse of names_to
+              values_from = lifeExp) #inverse of values_to
+
+# Adding the name prefixes saves a renaming step and is a good practice:
+
+gapminder_wide2 <- gapminder_data %>%
+  pivot_wider(names_from = year,
+              values_from = lifeExp,
+              names_prefix = "life_exp_") #indicate what you want in the newly created columns
+
+# What about gather / spread? These functions are being retired, please use pivot_longer and pivot_wider!
+
+?gather
+?spread
+
+?pivot_longer
+?pivot_wider
+```
+
